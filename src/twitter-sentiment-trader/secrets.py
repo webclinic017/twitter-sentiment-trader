@@ -8,8 +8,10 @@ FINNHUB_SANDBOX = os.environ['FINNHUB_SANDBOX']
 """
 API for Twitter: 
 """
-TWITTER_KEY = os.environ['TWITTER_KEY']
-TWITTER_SECRET = os.environ['TWITTER_SECRET']
+TWITTER_CONSUMER = os.environ['TWITTER_CONSUMER']
+TWITTER_CONSUMER_SECRET = os.environ['TWITTER_CONSUMER_SECRET']
+TWITTER_ACCESS = os.environ['TWITTER_ACCESS']
+TWITTER_ACCESS_SECRET = os.environ['TWITTER_ACCESS_SECRET']
 """
 API for Alpaca: https://alpaca.markets/docs/python-sdk/
 """
