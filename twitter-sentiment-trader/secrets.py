@@ -6,7 +6,7 @@ API for finnhub.io: https://finnhub.io/docs/api
 FINNHUB_KEY = os.environ['FINNHUB_KEY']
 FINNHUB_SANDBOX = os.environ['FINNHUB_SANDBOX']
 """
-API for Twitter: 
+API for Twitter: https://developer.twitter.com/en/docs/twitter-api
 """
 TWITTER_CONSUMER = os.environ['TWITTER_CONSUMER']
 TWITTER_CONSUMER_SECRET = os.environ['TWITTER_CONSUMER_SECRET']
