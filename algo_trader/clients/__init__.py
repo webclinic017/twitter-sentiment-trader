@@ -1,1 +1,1 @@
-from .clients import finnhubClient, alpacaData, alpacaBroker
+from .clients import finnhubData, alpacaData, alpacaBroker
