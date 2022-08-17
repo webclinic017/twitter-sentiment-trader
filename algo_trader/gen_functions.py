@@ -16,26 +16,28 @@ import pyarrow.parquet as pq
 OUTDIR = './data/'
 mkpath(OUTDIR)
 END = dt.today()
-TIMEFRAME = timedelta(weeks=300)
+TIMEFRAME = timedelta(weeks=1)
 CALLS = 60
 RATE_LIMIT = 60
 
 
 def get_fin_method(method): return getattr(finnhubData(), method)
-def get_fin_part(method, *args, **kwargs): return partial(get_fin_method(method), *args, **kwargs)
-def get_technical(indicator): return get_fin_part('technical_indicator', indicator=indicator)
+def get_fin_part(method, **kwargs): return partial(get_fin_method(method), **kwargs)
 
 
-get_candles = get_fin_part('stock_candles')
-get_social = get_fin_part('stock_social_sentiment')
+def get_technical(indicator, **kwargs): return get_fin_part(method='technical_indicator', indicator=indicator, **kwargs)
 
 
-def __base_function_switch(indicator):
-    if indicator == 'CANDLE':
-        return get_candles
+def get_candles(**kwargs): return get_fin_part('stock_candles', **kwargs)
+def get_social(**kwargs): return get_fin_part('stock_social_sentiment', **kwargs)
+
+
+def __base_function_switch(indicator, **kwargs):
+    if indicator in ('CANDLE', 'SOCIAL'):
+        return get_candles(**kwargs)
     elif indicator == 'SOCIAL':
-        return get_social
-    return get_technical(indicator)
+        return get_social(**kwargs)
+    return get_technical(indicator, **kwargs)
 
 
 def get_day(dval): return str(dval)[:10]
@@ -53,21 +55,22 @@ def get_function_params(indicator, resolution='D', timeframe=TIMEFRAME, end=END)
     return params
 
 
-def retrieve_data(ticker, indicator, retries=0, **kwargs):
+def pull_data(ticker, indicator,  **kwargs):
     try:
-        data = __base_function_switch(indicator)(ticker, **kwargs)
-        return make_parquet(clean_response(data, indicator), ticker, indicator)
+        func = __base_function_switch(indicator)
+        data = func(symbol=ticker, **kwargs)
+        df = clean_response(data)
+        return make_parquet(df, ticker, indicator)
     except FinnhubAPIException as api:
-        if api.status_code == 429 and retries < 3:
-            retries += 1
+        if api.status_code == 429:
             __api_wait(indicator, ticker)
-            retrieve_data(indicator, ticker, retries, **kwargs)
+            return pull_data(indicator, ticker, **kwargs)
 
 
-def retrieve_indicator(tickers, indicator, **kwargs):
+def pull_indicator(tickers, indicator, **kwargs):
     _execute_ind = BoundedThreads(thread_name_prefix=indicator)
     for ticker in tickers:
-        _execute_ind.addFuture(f"{ticker}_{indicator}", retrieve_data, ticker, indicator, **kwargs)
+        _execute_ind.addFuture(f"{ticker}_{indicator}", pull_data, ticker, indicator, **kwargs)
     return _execute_ind.check_futures()
 
 
@@ -88,24 +91,11 @@ def __api_wait(indicator, ticker):
     time.sleep(RATE_LIMIT)
 
 
-def column_map(df):
-    return df.rename(columns={
-        'c': 'close',
-        'o': 'open',
-        'h': 'high',
-        'l': 'low',
-        'v': 'volume',
-    })
-
-
-def clean_response(data, indicator):
+def clean_response(data):
     df = pd.DataFrame(data)
-    df['timestamp'] = df.t.apply(lambda d: dt.fromtimestamp(d))
-    if indicator == 'CANDLE':
-        df = column_map(df)
-    else:
-        df = df[[c for c in df.columns if c not in 'cohlv']]
-    return df.drop(columns=['s', 't'])
+    df['date'] = df.t.apply(lambda d: dt.fromtimestamp(d).date())
+    df.set_index(keys='date', inplace=True)
+    return df[[c for c in df.columns if c not in 'ochlvst']]
 
 
 def make_parquet(dataframe, ticker, indicator):
@@ -115,11 +105,12 @@ def make_parquet(dataframe, ticker, indicator):
     with writer, it appends dataframe to the already written pyarrow table.
 
     :param dataframe: pd.DataFrame to be written in parquet format.
-    :param ticker: ticker from which data has been retrieved. sub-folder of output.
+    :param ticker: ticker from which data has been pulled. sub-folder of output.
     :param indicator: stat(s) for ticker. base file name.
-    :return: ParquetWriter object. This can be passed in the subsequenct method calls to append DataFrame
+    :return: ParquetWriter object. This can be passed in the subsequent method calls to append DataFrame
         in the pyarrow Table
     """
+
     table = pa.Table.from_pandas(df=dataframe)
     tickdir = os.path.join(OUTDIR, ticker.replace('.', '-'))
     mkpath(tickdir)
@@ -132,8 +123,18 @@ def make_parquet(dataframe, ticker, indicator):
     }
 
 
-def retrieve_all_indicators(tickers, indicators, **kwargs):
+def pull_all_indicators(tickers, indicators, **kwargs):
     meta_data = dict()
     for indicator in indicators:
-        meta_data[indicator] = retrieve_indicator(tickers, indicator, **get_function_params(indicator, **kwargs))
+        meta_data[indicator] = pull_indicator(tickers, indicator, **get_function_params(indicator, **kwargs))
     return meta_data
+
+
+def get_ticker_df(ticker):
+    ticker = ticker.upper()
+    tickerdir = os.path.join(OUTDIR, ticker)
+    df = pd.DataFrame()
+    for file in os.listdir(tickerdir):
+        fname = os.path.join(tickerdir, file)
+        df = pd.concat([df, pd.read_parquet(fname)], axis=1)
+    return df.T.drop_duplicates().T
