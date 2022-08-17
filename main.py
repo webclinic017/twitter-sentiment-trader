@@ -1,6 +1,9 @@
+import time
+
 from algo_trader import gen_functions as fgen
 
 indicators = [
+    'CANDLE',
     'SMA',
     'EMA',
     'WMA',
@@ -45,7 +48,6 @@ indicators = [
     'AD',
     'ADOSC',
     'OBV',
-    'CANDLE',
 ]
 
 
@@ -53,4 +55,4 @@ if __name__ == '__main__':
     from datetime import timedelta
     from algo_trader import finnhubData
     tickers = finnhubData().company_peers('AAPL')
-    test = fgen.retrieve_all(tickers, indicators, timeframe=timedelta(weeks=500))
+    test = fgen.retrieve_all_indicators(tickers, indicators, timeframe=timedelta(weeks=1200))
