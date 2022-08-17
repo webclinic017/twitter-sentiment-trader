@@ -53,15 +53,15 @@ def get_function_params(indicator, resolution='D', timeframe=TIMEFRAME, end=END)
     return params
 
 
-def retrieve_data(ticker, indicator, **kwargs):
+def retrieve_data(ticker, indicator, retries=0, **kwargs):
     try:
         data = __base_function_switch(indicator)(ticker, **kwargs)
-        data = clean_response(ticker, indicator, data)
-        return make_parquet(data, ticker, indicator)
+        return make_parquet(clean_response(data, indicator), ticker, indicator)
     except FinnhubAPIException as api:
-        if api.status_code == 429:
+        if api.status_code == 429 and retries < 3:
+            retries += 1
             __api_wait(indicator, ticker)
-            retrieve_data(indicator, ticker, **kwargs)
+            retrieve_data(indicator, ticker, retries, **kwargs)
 
 
 def retrieve_indicator(tickers, indicator, **kwargs):
@@ -88,17 +88,24 @@ def __api_wait(indicator, ticker):
     time.sleep(RATE_LIMIT)
 
 
-def clean_response(ticker, indicator, data):
+def column_map(df):
+    return df.rename(columns={
+        'c': 'close',
+        'o': 'open',
+        'h': 'high',
+        'l': 'low',
+        'v': 'volume',
+    })
+
+
+def clean_response(data, indicator):
     df = pd.DataFrame(data)
-    df['date'] = df.t.apply(lambda d: dt.fromtimestamp(d).date()).astype(str)
-    df['ticker'] = ticker
-    df = df.drop(columns=['t', 's'])
-    df = df.set_index(['date', 'ticker'])
-    if indicator != 'CANDLE':
-        df = df[[c for c in df.columns if c not in 'chlov']]
+    df['timestamp'] = df.t.apply(lambda d: dt.fromtimestamp(d))
+    if indicator == 'CANDLE':
+        df = column_map(df)
     else:
-        df.columns = ['close', 'high', 'low', 'open', 'volume']
-    return df
+        df = df[[c for c in df.columns if c not in 'cohlv']]
+    return df.drop(columns=['s', 't'])
 
 
 def make_parquet(dataframe, ticker, indicator):
@@ -113,10 +120,10 @@ def make_parquet(dataframe, ticker, indicator):
     :return: ParquetWriter object. This can be passed in the subsequenct method calls to append DataFrame
         in the pyarrow Table
     """
-    table = pa.Table.from_pandas(df=dataframe, preserve_index=True)
-    tickdir = os.path.join(OUTDIR, indicator)
+    table = pa.Table.from_pandas(df=dataframe)
+    tickdir = os.path.join(OUTDIR, ticker.replace('.', '-'))
     mkpath(tickdir)
-    fpath = os.path.join(tickdir, f"{ticker.replace('.', '-')}.parquet")
+    fpath = os.path.join(tickdir, f"{indicator}.parquet")
     with pq.ParquetWriter(fpath, table.schema) as writer:
         writer.write_table(table=table)
     return {
