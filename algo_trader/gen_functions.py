@@ -76,11 +76,10 @@ def __api_wait(indicator, ticker):
         str_format(
             f"""
             {stars}
-            Finnhub API limit reached! Retrying the following parameters in {RATE_LIMIT} seconds
+            Finnhub <Response 429>: API limit reached! Retrying the following parameters in {RATE_LIMIT} seconds:
             {dashes}
             INDICATOR: {indicator}
-            TICKERS: {ticker}
-            STATUS: 429
+            TICKER: {ticker}
             {stars}
             """
         ),
